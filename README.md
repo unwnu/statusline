@@ -20,11 +20,40 @@ statusline on ⎇ main ↑2 ↓1
 
 Add to your `settings.json`:
 
+**macOS/Linux:**
 ```json
 {
   "statusLine": {
     "type": "command",
     "command": "~/.claude/bin/statusline",
+    "padding": 0
+  },
+  "env": {
+    "STATUSLINE_FETCH": "1"
+  }
+}
+```
+
+**Windows (PowerShell):**
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "%USERPROFILE%\\.claude\\statusline.exe",
+    "padding": 0
+  },
+  "env": {
+    "STATUSLINE_FETCH": "1"
+  }
+}
+```
+
+**Windows (Git Bash/MinGW):**
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/statusline.exe",
     "padding": 0
   },
   "env": {
