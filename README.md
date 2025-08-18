@@ -15,6 +15,7 @@ statusline on ⎇ main ↑2 ↓1
 
 - `STATUSLINE_NO_COLOR=1` — disable colors
 - `STATUSLINE_FETCH=1` — fetch upstream (slower, but accurate ↑/↓)
+- `STATUSLINE_FETCH_INTERVAL=30` — fetch interval in minutes (default: 30)
 
 ## Claude Code Integration
 
@@ -29,7 +30,8 @@ Add to your `settings.json`:
     "padding": 0
   },
   "env": {
-    "STATUSLINE_FETCH": "1"
+    "STATUSLINE_FETCH": "1",
+    "STATUSLINE_FETCH_INTERVAL": "5"
   }
 }
 ```
@@ -43,7 +45,8 @@ Add to your `settings.json`:
     "padding": 0
   },
   "env": {
-    "STATUSLINE_FETCH": "1"
+    "STATUSLINE_FETCH": "1",
+    "STATUSLINE_FETCH_INTERVAL": "5"
   }
 }
 ```
@@ -57,7 +60,8 @@ Add to your `settings.json`:
     "padding": 0
   },
   "env": {
-    "STATUSLINE_FETCH": "1"
+    "STATUSLINE_FETCH": "1",
+    "STATUSLINE_FETCH_INTERVAL": "5"
   }
 }
 ```
