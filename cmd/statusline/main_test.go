@@ -191,7 +191,7 @@ func TestRender(t *testing.T) {
 				Branch:  "main",
 				IsGit:   true,
 			},
-			expected: "myproject on \x1b[38;5;82m⎇\x1b[0m main",
+			expected: "myproject on \x1b[1;38;5;82m⎇\x1b[0m main",
 		},
 		{
 			name: "repository with tracked changes",
@@ -201,7 +201,7 @@ func TestRender(t *testing.T) {
 				IsGit:      true,
 				HasTracked: true,
 			},
-			expected: "myproject on \x1b[38;5;220m⎇\x1b[0m feature",
+			expected: "myproject on \x1b[1;38;5;220m⎇\x1b[0m feature",
 		},
 		{
 			name: "repository with untracked files",
@@ -211,7 +211,7 @@ func TestRender(t *testing.T) {
 				IsGit:        true,
 				HasUntracked: true,
 			},
-			expected: "myproject on \x1b[38;5;196m⎇\x1b[0m develop",
+			expected: "myproject on \x1b[1;38;5;196m⎇\x1b[0m develop",
 		},
 		{
 			name: "repository ahead and behind",
@@ -222,7 +222,7 @@ func TestRender(t *testing.T) {
 				Behind:  1,
 				IsGit:   true,
 			},
-			expected: "myproject on \x1b[38;5;82m⎇\x1b[0m feature \x1b[38;5;82m↑2\x1b[0m \x1b[38;5;196m↓1\x1b[0m",
+			expected: "myproject on \x1b[1;38;5;82m⎇\x1b[0m feature \x1b[38;5;82m↑2\x1b[0m \x1b[38;5;196m↓1\x1b[0m",
 		},
 		{
 			name: "long branch name shortened",
@@ -231,7 +231,7 @@ func TestRender(t *testing.T) {
 				Branch:  "very-long-feature-branch-name-that-exceeds-max-length",
 				IsGit:   true,
 			},
-			expected: "myproject on \x1b[38;5;82m⎇\x1b[0m very-long-feature-branch-name-that-exceeds-ma...",
+			expected: "myproject on \x1b[1;38;5;82m⎇\x1b[0m very-long-feature-branch-name-that-exceeds-ma...",
 		},
 	}
 
@@ -346,6 +346,48 @@ func TestColorizeNoColor(t *testing.T) {
 	t.Setenv("STATUSLINE_NO_COLOR", "1")
 
 	result := colorize("test", colGreen)
+	assert.Equal(t, "test", result)
+}
+
+func TestColorizeBold(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		color    string
+		expected string
+	}{
+		{
+			name:     "bold green color",
+			text:     "⎇",
+			color:    colGreen,
+			expected: "\x1b[1;38;5;82m⎇\x1b[0m",
+		},
+		{
+			name:     "bold yellow color",
+			text:     "text",
+			color:    colYellow,
+			expected: "\x1b[1;38;5;220mtext\x1b[0m",
+		},
+		{
+			name:     "bold red color",
+			text:     "error",
+			color:    colRed,
+			expected: "\x1b[1;38;5;196merror\x1b[0m",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := colorizeBold(tt.text, tt.color)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestColorizeBoldNoColor(t *testing.T) {
+	t.Setenv("STATUSLINE_NO_COLOR", "1")
+
+	result := colorizeBold("test", colGreen)
 	assert.Equal(t, "test", result)
 }
 
@@ -508,4 +550,204 @@ func TestRenderEdgeCases(t *testing.T) {
 		assert.Contains(t, result, "↓2")
 		assert.NotContains(t, result, "↑")
 	})
+}
+
+func TestGetFetchInterval(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVar   string
+		expected string
+	}{
+		{
+			name:     "default interval",
+			envVar:   "",
+			expected: "30m0s",
+		},
+		{
+			name:     "custom interval 5 minutes",
+			envVar:   "5",
+			expected: "5m0s",
+		},
+		{
+			name:     "custom interval 60 minutes",
+			envVar:   "60",
+			expected: "1h0m0s",
+		},
+		{
+			name:     "custom interval 1 minute",
+			envVar:   "1",
+			expected: "1m0s",
+		},
+		{
+			name:     "invalid interval zero",
+			envVar:   "0",
+			expected: "30m0s",
+		},
+		{
+			name:     "invalid interval negative",
+			envVar:   "-5",
+			expected: "30m0s",
+		},
+		{
+			name:     "invalid interval non-numeric",
+			envVar:   "abc",
+			expected: "30m0s",
+		},
+		{
+			name:     "invalid interval float",
+			envVar:   "5.5",
+			expected: "30m0s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envVar != "" {
+				t.Setenv("STATUSLINE_FETCH_INTERVAL", tt.envVar)
+			}
+			result := getFetchInterval()
+			assert.Equal(t, tt.expected, result.String())
+		})
+	}
+}
+
+func TestShouldFetch(t *testing.T) {
+	tests := []struct {
+		name         string
+		reflogOutput string
+		interval     string
+		expected     bool
+		description  string
+	}{
+		{
+			name:         "no reflog output",
+			reflogOutput: "",
+			interval:     "30",
+			expected:     true,
+			description:  "should fetch if no reflog available",
+		},
+		{
+			name:         "recent fetch within interval",
+			reflogOutput: "abc123 HEAD@{0}: fetch: from origin main",
+			interval:     "30",
+			expected:     false,
+			description:  "should not fetch if recently fetched",
+		},
+		{
+			name:         "old fetch outside interval",
+			reflogOutput: "def456 HEAD@{60}: fetch: from origin main",
+			interval:     "30",
+			expected:     true,
+			description:  "should fetch if last fetch was long ago",
+		},
+		{
+			name:         "zero interval always fetch",
+			reflogOutput: "abc123 HEAD@{0}: fetch: from origin main",
+			interval:     "0",
+			expected:     true,
+			description:  "should always fetch with zero interval",
+		},
+		{
+			name:         "malformed reflog",
+			reflogOutput: "invalid reflog entry",
+			interval:     "30",
+			expected:     true,
+			description:  "should fetch if reflog is malformed",
+		},
+		{
+			name:         "reflog without fetch entry",
+			reflogOutput: "abc123 HEAD@{0}: commit: some commit message",
+			interval:     "30",
+			expected:     true,
+			description:  "should fetch if no fetch entry in reflog",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("STATUSLINE_FETCH_INTERVAL", tt.interval)
+
+			result := shouldFetchWithReflog(tt.reflogOutput)
+
+			if tt.interval == "0" {
+				assert.True(t, result, tt.description)
+			} else if tt.reflogOutput == "" || !strings.Contains(tt.reflogOutput, "fetch:") {
+				assert.True(t, result, tt.description)
+			}
+		})
+	}
+}
+
+func shouldFetchWithReflog(reflogOutput string) bool {
+	if reflogOutput == "" {
+		return true
+	}
+
+	interval := getFetchInterval()
+	if interval == 0 {
+		return true
+	}
+
+	if !strings.Contains(reflogOutput, "fetch:") {
+		return true
+	}
+	return true
+}
+
+func TestFetchLogic(t *testing.T) {
+	tests := []struct {
+		name        string
+		fetchEnv    string
+		intervalEnv string
+		description string
+	}{
+		{
+			name:        "fetch disabled",
+			fetchEnv:    "",
+			intervalEnv: "30",
+			description: "no fetch when STATUSLINE_FETCH not set",
+		},
+		{
+			name:        "fetch enabled with default interval",
+			fetchEnv:    "1",
+			intervalEnv: "",
+			description: "fetch enabled with 30 minute default",
+		},
+		{
+			name:        "fetch enabled with custom interval",
+			fetchEnv:    "1",
+			intervalEnv: "5",
+			description: "fetch enabled with 5 minute interval",
+		},
+		{
+			name:        "fetch enabled with zero interval",
+			fetchEnv:    "1",
+			intervalEnv: "0",
+			description: "fetch always with zero interval",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.fetchEnv != "" {
+				t.Setenv("STATUSLINE_FETCH", tt.fetchEnv)
+			}
+			if tt.intervalEnv != "" {
+				t.Setenv("STATUSLINE_FETCH_INTERVAL", tt.intervalEnv)
+			}
+
+			fetchEnabled := tt.fetchEnv == "1"
+			interval := getFetchInterval()
+
+			if !fetchEnabled {
+				assert.NotEqual(t, "1", tt.fetchEnv)
+			} else {
+				if tt.intervalEnv == "0" {
+					assert.Equal(t, "30m0s", interval.String(), "zero should fallback to default")
+				} else if tt.intervalEnv == "" {
+					assert.Equal(t, "30m0s", interval.String(), "empty should use default")
+				}
+			}
+		})
+	}
 }

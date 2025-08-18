@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -70,7 +71,7 @@ func collect(cwd string) repoInfo {
 	ri.IsGit = true
 	ri.Project = filepath.Base(root)
 
-	if os.Getenv("STATUSLINE_FETCH") == "1" {
+	if os.Getenv("STATUSLINE_FETCH") == "1" && shouldFetch(root) {
 		up := git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 		if up != "" {
 			if parts := strings.SplitN(up, "/", 2); len(parts) == 2 {
@@ -104,7 +105,7 @@ func render(ri repoInfo) string {
 	case ri.HasTracked:
 		iconCol = colYellow
 	}
-	icon := colorize("⎇", iconCol)
+	icon := colorizeBold("⎇", iconCol)
 
 	arrows := ""
 	if ri.Ahead > 0 {
@@ -143,6 +144,13 @@ func colorize(s, col string) string {
 		return s
 	}
 	return esc + "[" + col + "m" + s + esc + "[0m"
+}
+
+func colorizeBold(s, col string) string {
+	if os.Getenv("STATUSLINE_NO_COLOR") == "1" {
+		return s
+	}
+	return esc + "[1;" + col + "m" + s + esc + "[0m"
 }
 
 func parseStatus(s string) (branch string, ahead, behind int, hasTracked, hasUntracked bool) {
@@ -196,4 +204,39 @@ func shorten(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func getFetchInterval() time.Duration {
+	if s := os.Getenv("STATUSLINE_FETCH_INTERVAL"); s != "" {
+		if minutes, err := strconv.Atoi(s); err == nil && minutes > 0 {
+			return time.Duration(minutes) * time.Minute
+		}
+	}
+	return 30 * time.Minute
+}
+
+func shouldFetch(root string) bool {
+	interval := getFetchInterval()
+
+	up := git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if up == "" {
+		return true
+	}
+
+	reflog := git(root, "reflog", "show", "--date=unix", up, "-1")
+	if reflog == "" {
+		return true
+	}
+
+	fields := strings.Fields(reflog)
+	for i, field := range fields {
+		if strings.Contains(field, "fetch") && i > 0 {
+			if timestamp, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+				lastFetch := time.Unix(timestamp, 0)
+				return time.Since(lastFetch) >= interval
+			}
+		}
+	}
+
+	return true
 }
