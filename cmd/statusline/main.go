@@ -75,7 +75,7 @@ func collect(cwd string) repoInfo {
 		up := git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 		if up != "" {
 			if parts := strings.SplitN(up, "/", 2); len(parts) == 2 {
-				_ = git(root, "fetch", "--quiet", "--no-progress", "--prune", parts[0], parts[1])
+				_ = git(root, "fetch", "--dry-run", "--quiet", "--no-progress", "--prune", parts[0], parts[1])
 			}
 		}
 	}
