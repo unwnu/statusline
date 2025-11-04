@@ -208,7 +208,7 @@ func shorten(s string, maxLen int) string {
 
 func getFetchInterval() time.Duration {
 	if s := os.Getenv("STATUSLINE_FETCH_INTERVAL"); s != "" {
-		if minutes, err := strconv.Atoi(s); err == nil && minutes > 0 {
+		if minutes, err := strconv.Atoi(s); err == nil && minutes >= 0 {
 			return time.Duration(minutes) * time.Minute
 		}
 	}
@@ -224,19 +224,48 @@ func shouldFetch(root string) bool {
 	}
 
 	reflog := git(root, "reflog", "show", "--date=unix", up, "-1")
+	return shouldFetchFromReflog(reflog, interval)
+}
+
+func shouldFetchFromReflog(reflog string, interval time.Duration) bool {
 	if reflog == "" {
 		return true
 	}
 
+	if interval == 0 {
+		return true
+	}
+
 	fields := strings.Fields(reflog)
-	for i, field := range fields {
-		if strings.Contains(field, "fetch") && i > 0 {
-			if timestamp, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
-				lastFetch := time.Unix(timestamp, 0)
-				return time.Since(lastFetch) >= interval
+
+	// Extract timestamp from "HEAD@{1234567890}:" format
+	var timestamp int64
+	for _, field := range fields {
+		if strings.Contains(field, "@{") {
+			start := strings.Index(field, "{")
+			end := strings.Index(field, "}")
+			if start != -1 && end != -1 && end > start {
+				if ts, err := strconv.ParseInt(field[start+1:end], 10, 64); err == nil {
+					timestamp = ts
+					break
+				}
 			}
 		}
 	}
 
-	return true
+	// Check if this is a fetch operation
+	hasFetch := false
+	for _, field := range fields {
+		if strings.Contains(field, "fetch") {
+			hasFetch = true
+			break
+		}
+	}
+
+	if !hasFetch || timestamp == 0 {
+		return true
+	}
+
+	lastFetch := time.Unix(timestamp, 0)
+	return time.Since(lastFetch) >= interval
 }

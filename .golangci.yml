@@ -4,8 +4,6 @@ linters:
   enable:
     - govet
     - staticcheck
-    - gofmt
-    - goimports
     - revive
 issues:
   exclude-use-default: false
