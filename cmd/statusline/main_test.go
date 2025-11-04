@@ -731,9 +731,10 @@ func TestFetchLogic(t *testing.T) {
 			if !fetchEnabled {
 				assert.NotEqual(t, "1", tt.fetchEnv)
 			} else {
-				if tt.intervalEnv == "0" {
+				switch tt.intervalEnv {
+				case "0":
 					assert.Equal(t, "0s", interval.String(), "zero interval means always fetch")
-				} else if tt.intervalEnv == "" {
+				case "":
 					assert.Equal(t, "30m0s", interval.String(), "empty should use default")
 				}
 			}
