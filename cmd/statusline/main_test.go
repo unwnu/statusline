@@ -18,6 +18,7 @@ func TestParseStatus(t *testing.T) {
 		expectedBehind    int
 		expectedTracked   bool
 		expectedUntracked bool
+		expectedConflicts bool
 	}{
 		{
 			name: "clean repository",
@@ -29,6 +30,7 @@ func TestParseStatus(t *testing.T) {
 			expectedBehind:    0,
 			expectedTracked:   false,
 			expectedUntracked: false,
+			expectedConflicts: false,
 		},
 		{
 			name: "ahead and behind",
@@ -40,6 +42,7 @@ func TestParseStatus(t *testing.T) {
 			expectedBehind:    3,
 			expectedTracked:   false,
 			expectedUntracked: false,
+			expectedConflicts: false,
 		},
 		{
 			name: "with tracked changes",
@@ -52,6 +55,7 @@ func TestParseStatus(t *testing.T) {
 			expectedBehind:    0,
 			expectedTracked:   true,
 			expectedUntracked: false,
+			expectedConflicts: false,
 		},
 		{
 			name: "with untracked files",
@@ -64,6 +68,7 @@ func TestParseStatus(t *testing.T) {
 			expectedBehind:    0,
 			expectedTracked:   false,
 			expectedUntracked: true,
+			expectedConflicts: false,
 		},
 		{
 			name: "mixed status",
@@ -76,6 +81,7 @@ func TestParseStatus(t *testing.T) {
 			expectedBehind:    0,
 			expectedTracked:   true,
 			expectedUntracked: true,
+			expectedConflicts: false,
 		},
 		{
 			name:              "empty input",
@@ -85,6 +91,7 @@ func TestParseStatus(t *testing.T) {
 			expectedBehind:    0,
 			expectedTracked:   false,
 			expectedUntracked: false,
+			expectedConflicts: false,
 		},
 		{
 			name: "malformed branch.ab",
@@ -95,6 +102,7 @@ func TestParseStatus(t *testing.T) {
 			expectedBehind:    0,
 			expectedTracked:   false,
 			expectedUntracked: false,
+			expectedConflicts: false,
 		},
 		{
 			name: "single branch.ab value",
@@ -105,17 +113,31 @@ func TestParseStatus(t *testing.T) {
 			expectedBehind:    0,
 			expectedTracked:   false,
 			expectedUntracked: false,
+			expectedConflicts: false,
+		},
+		{
+			name: "with merge conflicts",
+			input: `# branch.head main
+# branch.ab +0 -0
+u UU N... 100644 100644 100644 100644 abc123 def456 ghi789 conflicted.txt`,
+			expectedBranch:    "main",
+			expectedAhead:     0,
+			expectedBehind:    0,
+			expectedTracked:   true,
+			expectedUntracked: false,
+			expectedConflicts: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			branch, ahead, behind, hasTracked, hasUntracked := parseStatus(tt.input)
+			branch, ahead, behind, hasTracked, hasUntracked, hasConflicts := parseStatus(tt.input)
 			assert.Equal(t, tt.expectedBranch, branch)
 			assert.Equal(t, tt.expectedAhead, ahead)
 			assert.Equal(t, tt.expectedBehind, behind)
 			assert.Equal(t, tt.expectedTracked, hasTracked)
 			assert.Equal(t, tt.expectedUntracked, hasUntracked)
+			assert.Equal(t, tt.expectedConflicts, hasConflicts)
 		})
 	}
 }
@@ -234,6 +256,37 @@ func TestRender(t *testing.T) {
 				IsGit:   true,
 			},
 			expected: "myproject on \x1b[1;38;5;82m⎇\x1b[0m very-long-feature-branch-name-that-exceeds-ma...",
+		},
+		{
+			name: "repository with conflicts",
+			repoInfo: repoInfo{
+				Project:      "myproject",
+				Branch:       "main",
+				IsGit:        true,
+				HasConflicts: true,
+			},
+			expected: "myproject on \x1b[1;38;5;196m⎇\x1b[0m main \x1b[38;5;196m⚠\x1b[0m",
+		},
+		{
+			name: "repository with stashes",
+			repoInfo: repoInfo{
+				Project:    "myproject",
+				Branch:     "main",
+				IsGit:      true,
+				StashCount: 3,
+			},
+			expected: "myproject on \x1b[1;38;5;82m⎇\x1b[0m main \x1b[38;5;220m📦3\x1b[0m",
+		},
+		{
+			name: "repository with conflicts and stashes",
+			repoInfo: repoInfo{
+				Project:      "myproject",
+				Branch:       "main",
+				IsGit:        true,
+				HasConflicts: true,
+				StashCount:   2,
+			},
+			expected: "myproject on \x1b[1;38;5;196m⎇\x1b[0m main \x1b[38;5;196m⚠\x1b[0m \x1b[38;5;220m📦2\x1b[0m",
 		},
 	}
 
@@ -402,6 +455,8 @@ func TestRepoInfo(t *testing.T) {
 		HasTracked:   true,
 		HasUntracked: false,
 		IsGit:        true,
+		HasConflicts: false,
+		StashCount:   3,
 	}
 
 	assert.Equal(t, "testproject", ri.Project)
@@ -411,6 +466,8 @@ func TestRepoInfo(t *testing.T) {
 	assert.True(t, ri.HasTracked)
 	assert.False(t, ri.HasUntracked)
 	assert.True(t, ri.IsGit)
+	assert.False(t, ri.HasConflicts)
+	assert.Equal(t, 3, ri.StashCount)
 }
 
 func TestGit(t *testing.T) {
@@ -499,15 +556,16 @@ func TestMainFunction(t *testing.T) {
 func TestParseStatusEdgeCases(t *testing.T) {
 	t.Run("parse status with whitespace lines", func(t *testing.T) {
 		input := `# branch.head main
-		
-   
+
+
 # branch.ab +1 -0`
-		branch, ahead, behind, hasTracked, hasUntracked := parseStatus(input)
+		branch, ahead, behind, hasTracked, hasUntracked, hasConflicts := parseStatus(input)
 		assert.Equal(t, "main", branch)
 		assert.Equal(t, 1, ahead)
 		assert.Equal(t, 0, behind)
 		assert.False(t, hasTracked)
 		assert.False(t, hasUntracked)
+		assert.False(t, hasConflicts)
 	})
 
 	t.Run("parse status with mixed prefixes", func(t *testing.T) {
@@ -517,13 +575,55 @@ func TestParseStatusEdgeCases(t *testing.T) {
 2 R. N... 100644 100644 100644 abc123 def456 old.txt new.txt
 ? untracked.txt
 u AM N... 100644 100644 100644 abc123 def456 unmerged.txt`
-		branch, ahead, behind, hasTracked, hasUntracked := parseStatus(input)
+		branch, ahead, behind, hasTracked, hasUntracked, hasConflicts := parseStatus(input)
 		assert.Equal(t, "develop", branch)
 		assert.Equal(t, 0, ahead)
 		assert.Equal(t, 1, behind)
 		assert.True(t, hasTracked)
 		assert.True(t, hasUntracked)
+		assert.True(t, hasConflicts)
 	})
+}
+
+func TestCountLines(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected int
+	}{
+		{
+			name:     "empty string",
+			input:    "",
+			expected: 0,
+		},
+		{
+			name:     "single line",
+			input:    "line 1",
+			expected: 1,
+		},
+		{
+			name:     "multiple lines",
+			input:    "line 1\nline 2\nline 3",
+			expected: 3,
+		},
+		{
+			name:     "lines with trailing newline",
+			input:    "line 1\nline 2\n",
+			expected: 3,
+		},
+		{
+			name:     "many lines",
+			input:    "stash@{0}: WIP on main: abc123 Work in progress\nstash@{1}: WIP on feature: def456 Another stash\nstash@{2}: index on develop: ghi789 Index state",
+			expected: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := countLines(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }
 
 func TestRenderEdgeCases(t *testing.T) {

@@ -5,11 +5,13 @@ Git status line tool for Claude Code.
 ## Example Output
 
 ```
-statusline on ⎇ main ↑2 ↓1
+statusline on ⎇ main ↑2 ↓1 ⚠ 📦3
 ```
 
-- `⎇` icon color indicates repository status: green (clean), yellow (tracked changes), red (untracked files)
+- `⎇` icon color indicates repository status: green (clean), yellow (tracked changes), red (untracked files or conflicts)
 - `↑2` ahead of upstream, `↓1` behind upstream
+- `⚠` merge conflicts detected
+- `📦3` number of stashed changes
 
 ## Environment Variables
 

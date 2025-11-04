@@ -34,10 +34,12 @@ type input struct {
 }
 
 type repoInfo struct {
-	Project                         string
-	Branch                          string
-	Ahead, Behind                   int
-	HasTracked, HasUntracked, IsGit bool
+	Project                                string
+	Branch                                 string
+	Ahead, Behind                          int
+	HasTracked, HasUntracked, IsGit        bool
+	HasConflicts                           bool
+	StashCount                             int
 }
 
 func main() {
@@ -81,7 +83,7 @@ func collect(cwd string) repoInfo {
 	}
 
 	status := git(root, "status", "--porcelain=2", "--branch", "--ignore-submodules=dirty")
-	ri.Branch, ri.Ahead, ri.Behind, ri.HasTracked, ri.HasUntracked = parseStatus(status)
+	ri.Branch, ri.Ahead, ri.Behind, ri.HasTracked, ri.HasUntracked, ri.HasConflicts = parseStatus(status)
 
 	if ri.Branch == "" {
 		ri.Branch = "no-branch"
@@ -91,6 +93,12 @@ func collect(cwd string) repoInfo {
 			ri.Branch = "detached@" + sha
 		}
 	}
+
+	// Get stash count
+	if stashList := git(root, "stash", "list"); stashList != "" {
+		ri.StashCount = countLines(stashList)
+	}
+
 	return ri
 }
 
@@ -100,6 +108,8 @@ func render(ri repoInfo) string {
 	}
 	iconCol := colGreen
 	switch {
+	case ri.HasConflicts:
+		iconCol = colRed
 	case ri.HasUntracked:
 		iconCol = colRed
 	case ri.HasTracked:
@@ -115,7 +125,15 @@ func render(ri repoInfo) string {
 		arrows += " " + colorize(fmt.Sprintf("↓%d", ri.Behind), colRed)
 	}
 
-	return fmt.Sprintf("%s on %s %s%s", ri.Project, icon, shorten(ri.Branch, maxBranchLen), arrows)
+	extras := ""
+	if ri.HasConflicts {
+		extras += " " + colorize("⚠", colRed)
+	}
+	if ri.StashCount > 0 {
+		extras += " " + colorize(fmt.Sprintf("📦%d", ri.StashCount), colYellow)
+	}
+
+	return fmt.Sprintf("%s on %s %s%s%s", ri.Project, icon, shorten(ri.Branch, maxBranchLen), arrows, extras)
 }
 
 func readCwd(r io.Reader) string {
@@ -153,7 +171,7 @@ func colorizeBold(s, col string) string {
 	return esc + "[1;" + col + "m" + s + esc + "[0m"
 }
 
-func parseStatus(s string) (branch string, ahead, behind int, hasTracked, hasUntracked bool) {
+func parseStatus(s string) (branch string, ahead, behind int, hasTracked, hasUntracked, hasConflicts bool) {
 	for ln := range strings.SplitSeq(s, "\n") {
 		ln = strings.TrimSpace(ln)
 		if ln == "" {
@@ -174,6 +192,12 @@ func parseStatus(s string) (branch string, ahead, behind int, hasTracked, hasUnt
 		}
 		if strings.HasPrefix(ln, "? ") {
 			hasUntracked = true
+			continue
+		}
+		if strings.HasPrefix(ln, "u ") {
+			// Unmerged path (conflict)
+			hasConflicts = true
+			hasTracked = true
 			continue
 		}
 		if strings.HasPrefix(ln, "1 ") || strings.HasPrefix(ln, "2 ") {
@@ -204,6 +228,17 @@ func shorten(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	count := 0
+	for range strings.SplitSeq(s, "\n") {
+		count++
+	}
+	return count
 }
 
 func getFetchInterval() time.Duration {
