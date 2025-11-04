@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -579,9 +581,9 @@ func TestGetFetchInterval(t *testing.T) {
 			expected: "1m0s",
 		},
 		{
-			name:     "invalid interval zero",
+			name:     "zero interval for always fetch",
 			envVar:   "0",
-			expected: "30m0s",
+			expected: "0s",
 		},
 		{
 			name:     "invalid interval negative",
@@ -612,6 +614,11 @@ func TestGetFetchInterval(t *testing.T) {
 }
 
 func TestShouldFetch(t *testing.T) {
+	// Generate timestamps for testing
+	now := time.Now()
+	recentTimestamp := now.Add(-10 * time.Minute).Unix()  // 10 minutes ago
+	oldTimestamp := now.Add(-60 * time.Minute).Unix()     // 60 minutes ago
+
 	tests := []struct {
 		name         string
 		reflogOutput string
@@ -628,21 +635,21 @@ func TestShouldFetch(t *testing.T) {
 		},
 		{
 			name:         "recent fetch within interval",
-			reflogOutput: "abc123 HEAD@{0}: fetch: from origin main",
+			reflogOutput: fmt.Sprintf("abc123 HEAD@{%d}: fetch: from origin main", recentTimestamp),
 			interval:     "30",
 			expected:     false,
 			description:  "should not fetch if recently fetched",
 		},
 		{
 			name:         "old fetch outside interval",
-			reflogOutput: "def456 HEAD@{60}: fetch: from origin main",
+			reflogOutput: fmt.Sprintf("def456 HEAD@{%d}: fetch: from origin main", oldTimestamp),
 			interval:     "30",
 			expected:     true,
 			description:  "should fetch if last fetch was long ago",
 		},
 		{
 			name:         "zero interval always fetch",
-			reflogOutput: "abc123 HEAD@{0}: fetch: from origin main",
+			reflogOutput: fmt.Sprintf("abc123 HEAD@{%d}: fetch: from origin main", recentTimestamp),
 			interval:     "0",
 			expected:     true,
 			description:  "should always fetch with zero interval",
@@ -656,7 +663,7 @@ func TestShouldFetch(t *testing.T) {
 		},
 		{
 			name:         "reflog without fetch entry",
-			reflogOutput: "abc123 HEAD@{0}: commit: some commit message",
+			reflogOutput: fmt.Sprintf("abc123 HEAD@{%d}: commit: some commit message", recentTimestamp),
 			interval:     "30",
 			expected:     true,
 			description:  "should fetch if no fetch entry in reflog",
@@ -667,31 +674,13 @@ func TestShouldFetch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("STATUSLINE_FETCH_INTERVAL", tt.interval)
 
-			result := shouldFetchWithReflog(tt.reflogOutput)
+			interval := getFetchInterval()
+			result := shouldFetchFromReflog(tt.reflogOutput, interval)
 
-			if tt.interval == "0" {
-				assert.True(t, result, tt.description)
-			} else if tt.reflogOutput == "" || !strings.Contains(tt.reflogOutput, "fetch:") {
-				assert.True(t, result, tt.description)
-			}
+			// Check the expected result
+			assert.Equal(t, tt.expected, result, tt.description)
 		})
 	}
-}
-
-func shouldFetchWithReflog(reflogOutput string) bool {
-	if reflogOutput == "" {
-		return true
-	}
-
-	interval := getFetchInterval()
-	if interval == 0 {
-		return true
-	}
-
-	if !strings.Contains(reflogOutput, "fetch:") {
-		return true
-	}
-	return true
 }
 
 func TestFetchLogic(t *testing.T) {
@@ -743,7 +732,7 @@ func TestFetchLogic(t *testing.T) {
 				assert.NotEqual(t, "1", tt.fetchEnv)
 			} else {
 				if tt.intervalEnv == "0" {
-					assert.Equal(t, "30m0s", interval.String(), "zero should fallback to default")
+					assert.Equal(t, "0s", interval.String(), "zero interval means always fetch")
 				} else if tt.intervalEnv == "" {
 					assert.Equal(t, "30m0s", interval.String(), "empty should use default")
 				}
